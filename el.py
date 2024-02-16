@@ -15,8 +15,6 @@ Based off Steve Nichols' Script from ~2010, Univ. of California Santa Barbara
 #IV-Sweep Credits to:
 #https://github.com/demisjohn/Keithley-I-V-Sweep
 
-pip install pyvisa
-
 import pyvisa        # PyVISA module, for GPIB comms
 import numpy as np  # enable NumPy numerical analysis
 import time          # to allow pause between measurements
