@@ -32,43 +32,56 @@ def intro():
     
 def set_params():
     with st.form("Set params"):
-        save_file_input = st.checkbox("Save files", value=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            save_file_input = st.checkbox("Save files", value=True)
+        with col2:
+            reverse_file_input = st.checkbox("Reverse sweep", value=True)
+        
         sample_name_input = st.text_input("Sample name", value="QLEDcheng")
         
         col1, col2 = st.columns(2)
         with col1:
-            sleep_time_input = st.number_input("Sleep time (s)", value=0.5, format='%f')
+            sleep_time_input = st.number_input("Sleep time (s)", value=0.05, format='%f')
         with col2:
             current_compliance_input = st.number_input("Current compliance (A)", value=1.0, format='%f')
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            start_input = st.number_input("Starting value of voltage sweep (V)", value=0.0, format='%f')
+            start_input = st.number_input("Starting value of voltage sweep (V)", value=-2.0, format='%f')
         with col2:
-            stop_input = st.number_input("Ending value of voltage sweep (V)", value=5.0, format='%f')
+            transition_input = st.number_input("Transition value of voltage sweep (V)", value=2.5)
         with col3:
-            numpoints_input = st.number_input("Number of points in sweep", value=21)
+            stop_input = st.number_input("Ending value of voltage sweep (V)", value=7.0, format='%f')
+
+        col1, col2 = st.columns(2)
+        with col1:
+            numpoints_input1 = st.number_input("Number of points in sweep stage 1", value=23)
+        with col2:
+            numpoints_input2 = st.number_input("Number of points in sweep stage 2", value=23)
 
         # Every form must have a submit button.
         submitted = st.form_submit_button("Run")
         if submitted:
-            body(save_file_input, sample_name_input, sleep_time_input, current_compliance_input,
-                start_input, stop_input, numpoints_input)
+            body(save_file_input, reverse_file_input, sample_name_input, sleep_time_input, current_compliance_input,
+                start_input, stop_input, transition_input, numpoints_input1, numpoints_input2)
             if save_file_input:
                 st.success('All files were downloaded!')
 
-def body(save_file_input, sample_name_input, sleep_time_input, current_compliance_input, 
-         start_input, stop_input, numpoints_input):
+def body(save_file_input, reverse_file_input, sample_name_input, sleep_time_input, current_compliance_input, 
+         start_input, stop_input, transition_input, numpoints_input1, numpoints_input2):
     
     #PARAMETERS
     SaveFiles = save_file_input   # Save the plot & data?  Only display if False.
+    ReverseSweep = reverse_file_input   # Save the plot & data?  Only display if False.
     Sample_Name = sample_name_input        #sample number
     sleep_time = sleep_time_input #seconds
     CurrentCompliance = current_compliance_input    # compliance (max) current (A)
     start = start_input     # starting value of Voltage sweep
     stop = stop_input      # ending value 
-    numpoints = numpoints_input  # number of points in sweep
-
+    transition = transition_input
+    numpoints1 = numpoints_input1  # number of points in sweep
+    numpoints2 = numpoints_input2
     #--------------------------------------------------------------------------
     
     today = date.today()
@@ -79,7 +92,7 @@ def body(save_file_input, sample_name_input, sleep_time_input, current_complianc
 #     rm.list_resources()
 
     keithley = rm.open_resource('GPIB0::24::INSTR')
-    keithley2 = rm.open_resource('GPIB1::24::INSTR') #photocurrent measure
+    keithley2 = rm.open_resource('GPIB0::25::INSTR') #photocurrent measure
     
     #--------------------------------------------------------------------------
     
@@ -102,12 +115,21 @@ def body(save_file_input, sample_name_input, sleep_time_input, current_complianc
     keithley2.write(":OUTP ON")                    # Output on
 
     # Loop to sweep voltage, collect photocurrent
+    part1 = np.linspace(start, transition, num=numpoints1, endpoint=True)
+    part1 = np.delete(part1, len(part1)-1)
+    part2 = np.linspace(transition, stop, num=numpoints2, endpoint=True)
+    Volts = np.append(part1,part2)
+    numpoints = numpoints1+numpoints2-1
+    
     Voltage=[]
     Current = []
     Photocurrent = []
     voltage_count=0
+    ReverseVoltage=[]
+    ReverseCurrent=[]
+    ReversePhotocurrent=[]
 
-    for V in np.linspace(start, stop, num=numpoints, endpoint=True):
+    for V in Volts:
         #Voltage.append(V)
         print("Voltage set to: "+str(V)+" V")
         keithley.write(":SOUR:VOLT " + str(V))
@@ -127,11 +149,40 @@ def body(save_file_input, sample_name_input, sleep_time_input, current_complianc
         PhotocurrentI = eval(answer2.pop(1)) * 1e3     # convert to number
         if V == 0:
             Dark_photocurrent = PhotocurrentI
-        Photocurrent.append(PhotocurrentI-Dark_photocurrent)
+        Photocurrent.append(PhotocurrentI)
         print("--> Photocurrent = " + str(Photocurrent[-1]) + ' mA')   # print last read value
 
         voltage_count+=1
         #end for(V)
+    if ReverseSweep:
+        #New for reverse sweep
+        for V in reversed(Volts):
+            #Voltage.append(V)
+            print("Voltage set to: "+str(V)+" V")
+            keithley.write(":SOUR:VOLT " + str(V))
+            time.sleep(sleep_time)    # add second between
+            data = keithley.query(":READ?")   #returns string with many values (V, I, ...)
+            answer = data.split(',')    # remove delimiters, return values into list elements
+            I = eval(answer.pop(1)) * 1e3     # convert to number
+            ReverseCurrent.append(I)
+
+            vread = eval(answer.pop(0))
+            ReverseVoltage.append(vread)
+            print("--> Current = " + str(Current[-1]) + ' mA') 
+
+            #Now photocurrent
+            data2 = keithley2.query(":READ?")   #returns string with many values (V, I, ...)
+            answer2 = data2.split(',')    # remove delimiters, return values into list elements
+            PhotocurrentI = eval(answer2.pop(1)) * 1e3     # convert to number
+            if V == 0:
+                Dark_photocurrent = PhotocurrentI
+            ReversePhotocurrent.append(PhotocurrentI)
+            print("--> Photocurrent = " + str(Photocurrent[-1]) + ' mA')   # print last read value
+
+            voltage_count+=1
+            #end for(V)
+
+
     keithley.write(":OUTP OFF")     # turn off
     keithley.write("SYSTEM:KEY 23") # go to local control
     #keithley.close()
@@ -151,12 +202,19 @@ def body(save_file_input, sample_name_input, sleep_time_input, current_complianc
     #--------------------------------------------------------------------------
     
     ###### Plot #####
+    pixel_area = 0.057 #in cm^2
+    CurrentDensity = [x / pixel_area for x in Current]
+    ReverseCurrentDensity = [x / pixel_area for x in ReverseCurrent]
     
-    fig1, ax1 = plt.subplots(nrows=1, ncols=1)         # new figure & axis
 
-    line1 = ax1.plot(Voltage, Current)
+    fig1, ax1 = plt.subplots(nrows=1, ncols=1)         # new figure & axis
+#
+    line1 = ax1.plot(Voltage, CurrentDensity, label='Forward Sweep')
+    line2 = ax1.plot(ReverseVoltage, ReverseCurrentDensity, label = 'Backward Sweep',linestyle='dashed', color='#1E7AD0')
     ax1.set_xlabel('Voltage (V)')
-    ax1.set_ylabel('Current (mA)')
+    ax1.set_ylabel('Current Density (mA/cm2)')
+    ax1.set_yscale('log')
+    ax1.legend()
     ax1.set_title(f'I-V Curve {Sample_Name}')
 #     fig1.show()  # draw & show the plot - unfortunately it often opens underneath other windows
     st.pyplot(fig1)
@@ -170,9 +228,11 @@ def body(save_file_input, sample_name_input, sleep_time_input, current_complianc
     
     fig1, ax1 = plt.subplots(nrows=1, ncols=1)         # new figure & axis
 
-    line1 = ax1.plot(Voltage, Photocurrent)
+    line1 = ax1.plot(Voltage, Photocurrent, label="Forward Sweep")
+    line2 = ax1.plot(ReverseVoltage,ReversePhotocurrent, label = 'Backward Sweep',linestyle='dashed', color='#1E7AD0')
     ax1.set_xlabel('Voltage (V)')
     ax1.set_ylabel('Photocurrent (mA)')
+    ax1.legend()
     ax1.set_title(f'Bias vs. Photocurrent Curve {Sample_Name}')
 #     fig1.show()
     st.pyplot(fig1)
@@ -185,15 +245,25 @@ def body(save_file_input, sample_name_input, sleep_time_input, current_complianc
     Current=np.asarray(Current).reshape(numpoints,1)
     Voltage=np.asarray(Voltage).reshape(numpoints,1)
     Photocurrent = np.asarray(Photocurrent).reshape(numpoints,1)
+
     #Photovoltage = np.asarray(Photovoltage).reshape(numpoints,1)
     IV = np.append(Voltage,Current,axis=1)
     IV_photocurrent = np.append(IV,Photocurrent,axis=1)
-    #IV_photoIV = np.append(IV_photocurrent,Photovoltage,axis=1)
-    
+    if ReverseSweep:
+        ReverseCurrent=np.flip(np.asarray(ReverseCurrent).reshape(numpoints,1))
+        ReversePhotocurrent = np.flip(np.asarray(ReversePhotocurrent).reshape(numpoints,1))
+        IV_photocurrent_reverseI =  np.append(IV_photocurrent,ReverseCurrent,axis=1)
+        IV_plusReverse = np.append(IV_photocurrent_reverseI,ReversePhotocurrent,axis=1)
+        #IV_photoIV = np.append(IV_photocurrent,Photovoltage,axis=1)
+
     if SaveFiles:
-        np.savetxt(f'IV+Spectra/{date_string}{Sample_Name}_IV+photocurrent.csv', IV_photocurrent, 
+        if ReverseSweep:
+            np.savetxt(f'IV+Spectra/{date_string}{Sample_Name}_{start}V-{stop}V_IV+photocurrent.csv', IV_plusReverse, 
+                   fmt='%.18e', delimiter='\t', newline='\n', header='Bias(V)\tCurrent(mA)\tPhotocurrent(mA)\tReverseCurrent(mA)\tReversePhotocurrent(mA)')
+        else:
+            np.savetxt(f'IV+Spectra/{date_string}{Sample_Name}_{start}V-{stop}V_IV+photocurrent.csv', IV_photocurrent, 
                    fmt='%.18e', delimiter='\t', newline='\n', header='Bias(V)\tCurrent(mA)\tPhotocurrent(mA)')
-        
+
 #     IV_photocurrent
     
         

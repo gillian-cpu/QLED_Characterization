@@ -51,7 +51,7 @@ def set_params():
         
         col1, col2 = st.columns(2)
         with col1:
-            sleep_time_input = st.number_input("Sleep time (s)", value=0.5, format='%f')
+            sleep_time_input = st.number_input("Sleep time (s)", value=0.05, format='%f')
         with col2:
             current_compliance_input = st.number_input("Current compliance (A)", value=1.0, format='%f')
         
@@ -62,7 +62,7 @@ def set_params():
             stop_input = st.number_input("Ending value of voltage sweep (V)", value=10.0, format='%f')
         with col3:
             numpoints_input = st.number_input("Number of points in sweep", value=21)
-        spec_int_time_input = st.number_input("Spectrometer integration time (microseconds)", value=1000.0, format='%f')
+        spec_int_time_input = st.number_input("Spectrometer integration time (microseconds)", value=1000000.0, format='%f')
 
         # Every form must have a submit button.
         submitted = st.form_submit_button("Run")
@@ -149,7 +149,7 @@ def body(save_file_input, sample_name_input, sleep_time_input, current_complianc
             dark_intensities = intensities
 
         Spectra_array[:,0] = wavelengths
-        Spectra_array[:,voltage_count+1] = intensities-dark_intensities
+        Spectra_array[:,voltage_count+1] = intensities #-dark_intensities
 
         voltage_count+=1
         #end for(V)
@@ -190,12 +190,12 @@ def body(save_file_input, sample_name_input, sleep_time_input, current_complianc
     IV = np.append(Voltage,Current,axis=1)
     
 #     Spectra_array
-
+    int_time_s = Spectrometer_integration_time/1000000
     if SaveFiles==True:
-        np.savetxt(f'IV+Spectra/{date_string}{Sample_Name}_spectra.csv', Spectra_array, 
+        np.savetxt(f'IV+Spectra/{date_string}{Sample_Name}_{start}V-{stop}V_{int_time_s}s_spectra.csv', Spectra_array, 
                    fmt='%.18e', delimiter='\t', newline='\n', header=header_string, 
                    footer=f'Integration Time (ms) = {Spectrometer_integration_time}')
-        np.savetxt(f'IV+Spectra/{date_string}{Sample_Name}_IV.csv', IV, fmt='%.18e', 
+        np.savetxt(f'IV+Spectra/{date_string}{Sample_Name}_{start}V-{stop}V_{int_time_s}s_IV.csv', IV, fmt='%.18e', 
                    delimiter='\t', newline='\n', header='Bias Voltage(V)\tCurrent(mA)')
     
     #--------------------------------------------------------------------------
@@ -220,21 +220,22 @@ def body(save_file_input, sample_name_input, sleep_time_input, current_complianc
     fig = plt.figure(figsize=(5, 3))
     ax = fig.add_axes([0, 0, 1, 1])
 
-    for k in np.arange(0,numpoints, 5):
-    #for k in range(numpoints):
-        ax.plot(Spectra_array[:,0],Spectra_array[:,k+1],color = colors(k/numpoints), 
+    #for k in np.arange(0,numpoints, 5):
+    for k in range(numpoints):
+        ax.plot(Spectra_array[:,0],Spectra_array[:,k+1],color = colors((k+3)/(numpoints+3)), 
                  label=f'{IV[k,0]}V', linewidth = 1)
 
     ax.set_xlabel('Wavelength(nm)')
     ax.set_ylabel('Counts')
-    ax.set_title('Electroluminescence Spectra at Each\n Bias Voltage of White Commercial LED')
-    ax.set_xlim(300,850)
+    ax.set_title(f'Electroluminescence Spectra at Each\n Bias Voltage of {Sample_Name}')
+    ax.set_xlim(350,850)
     ax.legend(bbox_to_anchor=(1.4, 1), loc=1, frameon=False, fontsize=10, ncol=2)
 #     plt.show()
     st.pyplot(fig)
 
+    
     if SaveFiles==True:
-        plt.savefig(f'IV+Spectra/{date_string}{Sample_Name}_Spectra.png', bbox_inches='tight')
+        plt.savefig(f'IV+Spectra/{date_string}{Sample_Name}_{start}V-{stop}V_{int_time_s}sIntegrationTime_Spectra.png', bbox_inches='tight')
     
     
 if __name__ == '__main__':
